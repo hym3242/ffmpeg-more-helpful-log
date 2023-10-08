@@ -1,0 +1,748 @@
+diff --git a/fftools/cmdutils.c b/fftools/cmdutils.c
+index 156c13801a..cc5c18320b 100644
+--- a/fftools/cmdutils.c
++++ b/fftools/cmdutils.c
+@@ -55,6 +55,10 @@
+ #include "compat/w32dlfcn.h"
+ #endif
+ 
++typedef struct OptionsContext {
++    OptionGroup *g;
++}OptionsContext;
++
+ AVDictionary *sws_dict;
+ AVDictionary *swr_opts;
+ AVDictionary *format_opts, *codec_opts;
+@@ -251,6 +255,10 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
+         dst = &(*so)[*dstcount - 1].u;
+     }
+ 
++    if(optctx && (po->flags & (OPT_OFFSET|OPT_SPEC)) ) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to OptionsContext offset=%lu dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,po->u.off,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
++    if(optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to global var/func dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
++    if(!optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to optctx-less global var/func dst=%p\n",opt,arg,po->help,dst);
++
+     if (po->flags & OPT_STRING) {
+         char *str;
+         str = av_strdup(arg);
+@@ -290,7 +298,10 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
+ 
+         *(double *)dst = num;
+     } else if (po->u.func_arg) {
+-        int ret = po->u.func_arg(optctx, opt, arg);
++        int ret;
++        av_log(NULL,AV_LOG_WARNING,"    (func_arg...)\n");
++        ret = po->u.func_arg(optctx, opt, arg);
++        av_log(NULL,AV_LOG_WARNING,"    (...DONE func_arg)\n");
+         if (ret < 0) {
+             av_log(NULL, AV_LOG_ERROR,
+                    "Failed to set value '%s' for option '%s': %s\n",
+@@ -407,7 +418,7 @@ int parse_optgroup(void *optctx, OptionGroup *g)
+             return ret;
+     }
+ 
+-    av_log(NULL, AV_LOG_DEBUG, "Successfully parsed a group of options.\n");
++    av_log(NULL, AV_LOG_DEBUG, "Successfully parsed a group of options: %s %s.\n",g->group_def->name,g->arg);
+ 
+     return 0;
+ }
+diff --git a/fftools/ffmpeg.h b/fftools/ffmpeg.h
+index b059ecbb9f..d322abcbb8 100644
+--- a/fftools/ffmpeg.h
++++ b/fftools/ffmpeg.h
+@@ -634,6 +634,7 @@ typedef struct OutputFile {
+ 
+ // optionally attached as opaque_ref to decoded AVFrames
+ typedef struct FrameData {
++    int64_t pkt_pos;
+     // properties that come from the decoder
+     struct {
+         uint64_t   frame_num;
+diff --git a/fftools/ffmpeg_dec.c b/fftools/ffmpeg_dec.c
+index fcee8b65ac..fdccddab9d 100644
+--- a/fftools/ffmpeg_dec.c
++++ b/fftools/ffmpeg_dec.c
+@@ -627,6 +627,8 @@ static int packet_decode(InputStream *ist, AVPacket *pkt, AVFrame *frame)
+         fd->dec.frame_num           = dec->frame_num - 1;
+         fd->bits_per_raw_sample     = dec->bits_per_raw_sample;
+ 
++        if(pkt) fd->pkt_pos = pkt->pos;
++
+         frame->time_base = dec->pkt_timebase;
+ 
+         if (dec->codec_type == AVMEDIA_TYPE_AUDIO) {
+@@ -848,6 +850,8 @@ static int dec_thread_start(InputStream *ist)
+     ObjPool *op;
+     int ret = 0;
+ 
++    av_log(NULL,AV_LOG_WARNING,"[ STARTING DECODER THREAD : %s ]\n",ist->dec->name);
++
+     op = objpool_alloc_packets();
+     if (!op)
+         return AVERROR(ENOMEM);
+diff --git a/fftools/ffmpeg_demux.c b/fftools/ffmpeg_demux.c
+index c71edf01a5..86e4c09a98 100644
+--- a/fftools/ffmpeg_demux.c
++++ b/fftools/ffmpeg_demux.c
+@@ -676,6 +676,8 @@ static int thread_start(Demuxer *d)
+     int ret;
+     InputFile *f = &d->f;
+ 
++    av_log(NULL,AV_LOG_WARNING,"[ STARTING DEMUXER THREAD : %s ]\n",d->log_name);
++
+     if (d->thread_queue_size <= 0)
+         d->thread_queue_size = (nb_input_files > 1 ? 8 : 1);
+ 
+diff --git a/fftools/ffmpeg_mux.c b/fftools/ffmpeg_mux.c
+index 7a924dba6c..5ce251e3cf 100644
+--- a/fftools/ffmpeg_mux.c
++++ b/fftools/ffmpeg_mux.c
+@@ -495,6 +495,8 @@ static int thread_start(Muxer *mux)
+     ObjPool *op;
+     int ret;
+ 
++    av_log(NULL,AV_LOG_WARNING,"[ STARTING MUXER THREAD : %s ]\n",mux->log_name);
++
+     op = objpool_alloc_packets();
+     if (!op)
+         return AVERROR(ENOMEM);
+diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
+index 304471dd03..ff76c0bc0c 100644
+--- a/fftools/ffmpeg_opt.c
++++ b/fftools/ffmpeg_opt.c
+@@ -53,6 +53,11 @@
+ #include "libavutil/pixdesc.h"
+ #include "libavutil/pixfmt.h"
+ 
++struct AVDictionary {
++    int count;
++    AVDictionaryEntry *elems;
++};
++
+ const char *const opt_name_codec_names[]                      = {"c", "codec", "acodec", "vcodec", "scodec", "dcodec", NULL};
+ const char *const opt_name_frame_rates[]                      = {"r", NULL};
+ const char *const opt_name_codec_tags[]                       = {"tag", "atag", "vtag", "stag", NULL};
+@@ -1290,7 +1295,7 @@ static int open_files(OptionGroupList *l, const char *inout,
+                    inout, g->arg);
+             return ret;
+         }
+-        av_log(NULL, AV_LOG_DEBUG, "Successfully opened the file.\n");
++        av_log(NULL, AV_LOG_DEBUG, "Successfully opened the %s file: %s.\n",inout,g->arg);
+     }
+ 
+     return 0;
+@@ -1304,6 +1309,12 @@ int ffmpeg_parse_options(int argc, char **argv)
+ 
+     memset(&octx, 0, sizeof(octx));
+ 
++    av_log(NULL,AV_LOG_WARNING,"CMDLINE: ");
++    for (int i = 0; i < argc; i++) {
++        av_log(NULL,AV_LOG_WARNING,"%s ", argv[i]);
++    }
++    av_log(NULL,AV_LOG_WARNING,"\n");
++
+     /* split the commandline into an internal representation */
+     ret = split_commandline(&octx, argc, argv, options, groups,
+                             FF_ARRAY_ELEMS(groups));
+@@ -1322,6 +1333,89 @@ int ffmpeg_parse_options(int argc, char **argv)
+     /* configure terminal and setup signal handlers */
+     term_init();
+ 
++    /* dump global opts */
++    if(octx.global_opts.opts || octx.global_opts.format_opts || octx.global_opts.codec_opts  || octx.global_opts.sws_dict || octx.global_opts.swr_opts){
++        av_log(NULL,AV_LOG_WARNING,"GLOBAL: \n");
++    }
++    if(octx.global_opts.opts){
++        av_log(NULL,AV_LOG_WARNING,"    OPTS: ");
++        for(int i=0;i<octx.global_opts.nb_opts;i++){
++            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.opts[i].key,octx.global_opts.opts[i].val);
++        }
++        av_log(NULL,AV_LOG_WARNING,"\n");
++    }
++    if(octx.global_opts.format_opts){
++        av_log(NULL,AV_LOG_WARNING,"    FORMAT_OPTS: ");
++        for(int i=0;i<octx.global_opts.format_opts->count;i++){
++            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.format_opts->elems[i].key,octx.global_opts.format_opts->elems[i].value);
++        }
++        av_log(NULL,AV_LOG_WARNING,"\n");
++    }
++    if(octx.global_opts.codec_opts){
++        av_log(NULL,AV_LOG_WARNING,"    CODEC_OPTS: ");
++        for(int i=0;i<octx.global_opts.codec_opts->count;i++){
++            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.codec_opts->elems[i].key,octx.global_opts.codec_opts->elems[i].value);
++        }
++        av_log(NULL,AV_LOG_WARNING,"\n");
++    }
++    if(octx.global_opts.sws_dict){
++        av_log(NULL,AV_LOG_WARNING,"    SWS_DICT: ");
++        for(int i=0;i<octx.global_opts.sws_dict->count;i++){
++            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.sws_dict->elems[i].key,octx.global_opts.sws_dict->elems[i].value);
++        }
++        av_log(NULL,AV_LOG_WARNING,"\n");
++    }
++    if(octx.global_opts.swr_opts){
++        av_log(NULL,AV_LOG_WARNING,"    SWR_OPTS: ");
++        for(int i=0;i<octx.global_opts.swr_opts->count;i++){
++            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.swr_opts->elems[i].key,octx.global_opts.swr_opts->elems[i].value);
++        }
++        av_log(NULL,AV_LOG_WARNING,"\n");
++    }
++
++    /* dump the OptionParseContext octx (per file) */
++    for(int i=1;i>=0;i--){
++        for(int j=0;j<octx.groups[i].nb_groups;j++){
++            if(i==1)av_log(NULL,AV_LOG_WARNING,"INFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
++            if(i==0)av_log(NULL,AV_LOG_WARNING,"OUTFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
++            if(octx.groups[i].groups[j].opts){
++                av_log(NULL,AV_LOG_WARNING,"    OPTS: ");
++                for(int k=0;k<octx.groups[i].groups[j].nb_opts;k++){
++                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].opts[k].key,octx.groups[i].groups[j].opts[k].val);
++                }
++                av_log(NULL,AV_LOG_WARNING,"\n");
++            }
++            if(octx.groups[i].groups[j].format_opts){
++                av_log(NULL,AV_LOG_WARNING,"    FORMAT_OPTS: ");
++                for(int k=0;k<octx.groups[i].groups[j].format_opts->count;k++){
++                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].format_opts->elems[k].key,octx.groups[i].groups[j].format_opts->elems[k].value);
++                }
++                av_log(NULL,AV_LOG_WARNING,"\n");
++            }
++            if(octx.groups[i].groups[j].codec_opts){
++                av_log(NULL,AV_LOG_WARNING,"    CODEC_OPTS: ");
++                for(int k=0;k<octx.groups[i].groups[j].codec_opts->count;k++){
++                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].codec_opts->elems[k].key,octx.groups[i].groups[j].codec_opts->elems[k].value);
++                }
++                av_log(NULL,AV_LOG_WARNING,"\n");
++            }
++            if(octx.groups[i].groups[j].sws_dict){
++                av_log(NULL,AV_LOG_WARNING,"    SWS_DICT: ");
++                for(int k=0;k<octx.groups[i].groups[j].sws_dict->count;k++){
++                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].sws_dict->elems[k].key,octx.groups[i].groups[j].sws_dict->elems[k].value);
++                }
++                av_log(NULL,AV_LOG_WARNING,"\n");
++            }
++            if(octx.groups[i].groups[j].swr_opts){
++                av_log(NULL,AV_LOG_WARNING,"    SWR_OPTS: ");
++                for(int k=0;k<octx.groups[i].groups[j].swr_opts->count;k++){
++                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].swr_opts->elems[k].key,octx.groups[i].groups[j].swr_opts->elems[k].value);
++                }
++                av_log(NULL,AV_LOG_WARNING,"\n");
++            }
++        }
++    }
++
+     /* open input files */
+     ret = open_files(&octx.groups[GROUP_INFILE], "input", ifile_open);
+     if (ret < 0) {
+diff --git a/fftools/opt_common.c b/fftools/opt_common.c
+index 02d7048c42..8bb231cf86 100644
+--- a/fftools/opt_common.c
++++ b/fftools/opt_common.c
+@@ -200,7 +200,7 @@ static void print_program_info(int flags, int level)
+ 
+     av_log(NULL, level, "%s version " FFMPEG_VERSION, program_name);
+     if (flags & SHOW_COPYRIGHT)
+-        av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers",
++        av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers, customized by hym",
+                program_birth_year, CONFIG_THIS_YEAR);
+     av_log(NULL, level, "\n");
+     av_log(NULL, level, "%sbuilt with %s\n", indent, CC_IDENT);
+diff --git a/fftools/sync_queue.c b/fftools/sync_queue.c
+index bc107ba4fe..326a21732c 100644
+--- a/fftools/sync_queue.c
++++ b/fftools/sync_queue.c
+@@ -376,7 +376,7 @@ int sq_send(SyncQueue *sq, unsigned int stream_idx, SyncQueueFrame frame)
+ 
+     ts = frame_end(sq, dst, 0);
+ 
+-    av_log(sq->logctx, AV_LOG_DEBUG, "sq: send %u ts %s\n", stream_idx,
++    av_log(sq->logctx, AV_LOG_DEBUG, "sq: send %u (frameend)ts %s\n", stream_idx,
+            av_ts2timestr(ts, &st->tb));
+ 
+     ret = av_fifo_write(st->fifo, &dst, 1);
+@@ -568,7 +568,7 @@ static int receive_for_stream(SyncQueue *sq, unsigned int stream_idx,
+             }
+ 
+             av_log(sq->logctx, AV_LOG_DEBUG,
+-                   "sq: receive %u ts %s queue head %d ts %s\n", stream_idx,
++                   "sq: receive %u ts %s, queue head %d ts %s\n", stream_idx,
+                    av_ts2timestr(frame_end(sq, frame, 0), &st->tb),
+                    sq->head_stream,
+                    st_head ? av_ts2timestr(st_head->head_ts, &st_head->tb) : "N/A");
+diff --git a/libavcodec/avcodec.c b/libavcodec/avcodec.c
+index 2dda310e91..988077cc51 100644
+--- a/libavcodec/avcodec.c
++++ b/libavcodec/avcodec.c
+@@ -334,6 +334,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
+         avci->frame_thread_encoder) {
+         if (codec2->init) {
+             lock_avcodec(codec2);
++            av_log(NULL,AV_LOG_WARNING,"FFCodec[%s] -> init(); (%s)\n",codec2->p.name,codec2->p.long_name);
+             ret = codec2->init(avctx);
+             unlock_avcodec(codec2);
+             if (ret < 0) {
+@@ -575,11 +576,11 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
+                 const char *col = unknown_if_null(av_color_space_name(enc->colorspace));
+                 const char *pri = unknown_if_null(av_color_primaries_name(enc->color_primaries));
+                 const char *trc = unknown_if_null(av_color_transfer_name(enc->color_trc));
+-                if (strcmp(col, pri) || strcmp(col, trc)) {
++//                if (strcmp(col, pri) || strcmp(col, trc)) {
+                     new_line = 1;
+                     av_bprintf(&bprint, "%s/%s/%s, ", col, pri, trc);
+-                } else
+-                    av_bprintf(&bprint, "%s, ", col);
++//                } else
++//                    av_bprintf(&bprint, "%s, ", col);
+             }
+ 
+             if (enc->field_order != AV_FIELD_UNKNOWN) {
+diff --git a/libavcodec/h2645_parse.c b/libavcodec/h2645_parse.c
+index 28db465059..bdac63ac42 100644
+--- a/libavcodec/h2645_parse.c
++++ b/libavcodec/h2645_parse.c
+@@ -375,8 +375,8 @@ static int hevc_parse_nal_header(H2645NAL *nal, void *logctx)
+         return AVERROR_INVALIDDATA;
+ 
+     av_log(logctx, AV_LOG_DEBUG,
+-           "nal_unit_type: %d(%s), nuh_layer_id: %d, temporal_id: %d\n",
+-           nal->type, hevc_nal_unit_name(nal->type), nal->nuh_layer_id, nal->temporal_id);
++           "nal_unit_type: %d(%s), nuh_layer_id: %d, temporal_id: %d, size:%d bytes\n",
++           nal->type, hevc_nal_unit_name(nal->type), nal->nuh_layer_id, nal->temporal_id, nal->size);
+ 
+     return 0;
+ }
+@@ -392,8 +392,8 @@ static int h264_parse_nal_header(H2645NAL *nal, void *logctx)
+     nal->type    = get_bits(gb, 5);
+ 
+     av_log(logctx, AV_LOG_DEBUG,
+-           "nal_unit_type: %d(%s), nal_ref_idc: %d\n",
+-           nal->type, h264_nal_unit_name(nal->type), nal->ref_idc);
++           "nal_unit_type: %d(%s), nal_ref_idc: %d, size: %d bytes\n",
++           nal->type, h264_nal_unit_name(nal->type), nal->ref_idc, nal->size);
+ 
+     return 0;
+ }
+diff --git a/libavfilter/af_ashowinfo.c b/libavfilter/af_ashowinfo.c
+index 17a0a90542..4017a21ac4 100644
+--- a/libavfilter/af_ashowinfo.c
++++ b/libavfilter/af_ashowinfo.c
+@@ -213,11 +213,11 @@ FF_ENABLE_DEPRECATION_WARNINGS
+     av_channel_layout_describe(&buf->ch_layout, chlayout_str, sizeof(chlayout_str));
+ 
+     av_log(ctx, AV_LOG_INFO,
+-           "n:%"PRId64" pts:%s pts_time:%s "
++           "n:%"PRId64" pts:%s pts_time:%s duration:%"PRId64" duration_time:%s "
+            "fmt:%s channels:%d chlayout:%s rate:%d nb_samples:%d "
+            "checksum:%08"PRIX32" ",
+            inlink->frame_count_out,
+-           av_ts2str(buf->pts), av_ts2timestr(buf->pts, &inlink->time_base),
++           av_ts2str(buf->pts), av_ts2timestr(buf->pts, &inlink->time_base), buf->duration, av_ts2timestr(buf->duration, &inlink->time_base),
+            av_get_sample_fmt_name(buf->format), buf->ch_layout.nb_channels, chlayout_str,
+            buf->sample_rate, buf->nb_samples,
+            checksum);
+diff --git a/libavfilter/avfilter.c b/libavfilter/avfilter.c
+index ab7782862a..d76f23d76d 100644
+--- a/libavfilter/avfilter.c
++++ b/libavfilter/avfilter.c
+@@ -978,6 +978,16 @@ fail:
+ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
+ {
+     int ret;
++
++    if(link->type == AVMEDIA_TYPE_VIDEO){
++        if(link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_pix_fmt_desc_get(link->src->inputs[0]->format)->name,av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
++        if(!link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
++    }
++    if(link->type == AVMEDIA_TYPE_AUDIO){
++        if(link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_get_sample_fmt_name(link->src->inputs[0]->format),av_get_sample_fmt_name(link->src->outputs[0]->format));
++        if(!link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_get_sample_fmt_name(link->src->outputs[0]->format));
++    }
++
+     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); tlog_ref(NULL, frame, 1);
+ 
+     /* Consistency checks */
+diff --git a/libavfilter/vf_scale.c b/libavfilter/vf_scale.c
+index b0221e8538..63005af825 100644
+--- a/libavfilter/vf_scale.c
++++ b/libavfilter/vf_scale.c
+@@ -427,10 +427,21 @@ static const int *parse_yuv_type(const char *s, enum AVColorSpace colorspace)
+         colorspace = AVCOL_SPC_BT2020_NCL;
+     }
+ 
++    if(colorspace == 2) {
++             av_log(NULL,AV_LOG_ERROR,"vf_scale.c@parse_yuv_type(): in->colorspace is UNSPECIFIED, using bt709\n");
++             colorspace = AVCOL_SPC_BT709;
++    }
++
++    if(colorspace == 0) {
++        av_log(NULL,AV_LOG_ERROR,"vf_scale.c@parse_yuv_type(): in->colorspace is GBR, using bt709\n");
++        colorspace = AVCOL_SPC_BT709;
++    }
++
+     if (colorspace < 1 || colorspace > 10 || colorspace == 8) {
+         colorspace = AVCOL_SPC_BT470BG;
+     }
+ 
++    av_log(NULL,AV_LOG_WARNING,"vf_scale.c@parse_yuv_type(): decided colorspace = %s\n",av_color_space_name(colorspace));
+     return sws_getCoefficients(colorspace);
+ }
+ 
+@@ -619,12 +630,12 @@ static int config_props(AVFilterLink *outlink)
+     if (scale->sws)
+         av_opt_get(scale->sws, "sws_flags", 0, &flags_val);
+ 
+-    av_log(ctx, AV_LOG_VERBOSE, "w:%d h:%d fmt:%s sar:%d/%d -> w:%d h:%d fmt:%s sar:%d/%d flags:%s\n",
++    av_log(ctx, AV_LOG_VERBOSE, "w:%d h:%d fmt:%s sar:%d/%d -> w:%d h:%d fmt:%s sar:%d/%d flags:%s scale->in_color_matrix:%s scale->out_color_matrix:%s\n",
+            inlink ->w, inlink ->h, av_get_pix_fmt_name( inlink->format),
+            inlink->sample_aspect_ratio.num, inlink->sample_aspect_ratio.den,
+            outlink->w, outlink->h, av_get_pix_fmt_name(outlink->format),
+            outlink->sample_aspect_ratio.num, outlink->sample_aspect_ratio.den,
+-           flags_val);
++           flags_val,scale->in_color_matrix,scale->out_color_matrix);
+     av_freep(&flags_val);
+ 
+     return 0;
+@@ -856,6 +867,7 @@ scale:
+             table     = parse_yuv_type(scale->out_color_matrix, AVCOL_SPC_UNSPECIFIED);
+         else if (scale->in_color_matrix)
+             table = inv_table;
++		av_log(NULL,AV_LOG_WARNING,"[%s] inv_table={%d,%d,%d,%d} table={%d,%d,%d,%d}\n",link->dst->name,inv_table[0],inv_table[1],inv_table[2],inv_table[3],table[0],table[1],table[2],table[3]);
+ 
+         if (scale-> in_range != AVCOL_RANGE_UNSPECIFIED)
+             in_full  = (scale-> in_range == AVCOL_RANGE_JPEG);
+diff --git a/libavfilter/vf_showinfo.c b/libavfilter/vf_showinfo.c
+index bf8580bc8d..a03026a00e 100644
+--- a/libavfilter/vf_showinfo.c
++++ b/libavfilter/vf_showinfo.c
+@@ -24,6 +24,8 @@
+ 
+ #include <inttypes.h>
+ 
++#include <ctype.h>
++
+ #include "libavutil/bswap.h"
+ #include "libavutil/adler32.h"
+ #include "libavutil/display.h"
+@@ -49,6 +51,26 @@
+ #include "internal.h"
+ #include "video.h"
+ 
++typedef struct FrameData {
++    int64_t pkt_pos;
++    // properties that come from the decoder
++    struct {
++        uint64_t   frame_num;
++
++        int64_t    pts;
++        AVRational tb;
++    } dec;
++
++    AVRational frame_rate_filter;
++
++    int        bits_per_raw_sample;
++} FrameData;
++
++struct AVDictionary {
++    int count;
++    AVDictionaryEntry *elems;
++};
++
+ typedef struct ShowInfoContext {
+     const AVClass *class;
+     int calculate_checksums;
+@@ -64,6 +86,15 @@ static const AVOption showinfo_options[] = {
+ 
+ AVFILTER_DEFINE_CLASS(showinfo);
+ 
++static void dump_frame_metadata(AVFilterContext *ctx,AVFrame *frame)
++{
++    if(frame->metadata){
++        for(int i=0; i<frame->metadata->count; i++){
++            av_log(ctx,AV_LOG_INFO,"frame->metadata: %s = %s\n",frame->metadata->elems[i].key,frame->metadata->elems[i].value);
++        }
++    }
++}
++
+ static void dump_spherical(AVFilterContext *ctx, AVFrame *frame, const AVFrameSideData *sd)
+ {
+     const AVSphericalMapping *spherical = (const AVSphericalMapping *)sd->data;
+@@ -427,10 +458,15 @@ static void dump_sei_unregistered_metadata(AVFilterContext *ctx, const AVFrameSi
+ 
+     av_log(ctx, AV_LOG_INFO, "UUID=" AV_PRI_UUID "\n", AV_UUID_ARG(user_data));
+ 
+-    av_log(ctx, AV_LOG_INFO, "User Data=");
++    av_log(ctx, AV_LOG_INFO, "User Data = ");
+     for (size_t i = 16; i < sd->size; i++)
+         av_log(ctx, AV_LOG_INFO, "%02x", user_data[i]);
+     av_log(ctx, AV_LOG_INFO, "\n");
++
++    av_log(ctx, AV_LOG_INFO, "ASCII User Data = '");
++    for (size_t i = 16; i < sd->size; i++)
++        av_log(ctx, AV_LOG_INFO, "%c", isprint(user_data[i]) ? user_data[i] : '.');
++    av_log(ctx, AV_LOG_INFO, "'");
+ }
+ 
+ static void dump_sei_film_grain_params_metadata(AVFilterContext *ctx, const AVFrameSideData *sd)
+@@ -713,13 +749,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
+     }
+ 
+     av_log(ctx, AV_LOG_INFO,
+-           "n:%4"PRId64" pts:%7s pts_time:%-7s duration:%7"PRId64
+-           " duration_time:%-7s "
+-           "fmt:%s sar:%d/%d s:%dx%d i:%c iskey:%d type:%c ",
++           "n:%4"PRId64" pts:%7s pts_time:%-7s pkt_dts:%7s pkt_dts_time:%-7s duration:%7"PRId64
++           " duration_time:%-7s (deprecated)pkt_pos:%9"PRId64" ffmpegfd->pkt_pos:%9"PRId64" "
++           "fmt:%s(%d) sar:%d/%d s:%dx%d i:%c iskey:%d type:%c ",
+            inlink->frame_count_out,
+-           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base),
++           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base),av_ts2str(frame->pkt_dts), av_ts2timestr(frame->pkt_dts, &inlink->time_base),
+            frame->duration, av_ts2timestr(frame->duration, &inlink->time_base),
+-           desc->name,
++           frame->pkt_pos,
++           (frame->opaque_ref != NULL) ? ((FrameData *)frame->opaque_ref->data)->pkt_pos : -1,
++           desc->name,inlink->format,
+            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
+            frame->width, frame->height,
+            !(frame->flags & AV_FRAME_FLAG_INTERLACED)     ? 'P' :         /* Progressive  */
+@@ -827,6 +865,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
+ 
+     dump_color_property(ctx, frame);
+ 
++    dump_frame_metadata(ctx,frame);
++
+     return ff_filter_frame(inlink->dst->outputs[0], frame);
+ }
+ 
+diff --git a/libavformat/concatdec.c b/libavformat/concatdec.c
+index ffa8ade25b..64730cfb6f 100644
+--- a/libavformat/concatdec.c
++++ b/libavformat/concatdec.c
+@@ -212,7 +212,7 @@ static int detect_stream_specific(AVFormatContext *avf, int idx)
+             (st->codecpar->extradata_size >= 4 && AV_RB32(st->codecpar->extradata) == 1))
+             return 0;
+         av_log(cat->avf, AV_LOG_INFO,
+-               "Auto-inserting h264_mp4toannexb bitstream filter\n");
++               "concat: Auto-inserting h264_mp4toannexb bitstream filter\n");
+         filter = av_bsf_get_by_name("h264_mp4toannexb");
+         if (!filter) {
+             av_log(avf, AV_LOG_ERROR, "h264_mp4toannexb bitstream filter "
+@@ -781,7 +781,7 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
+ 
+     st = cat->avf->streams[pkt->stream_index];
+     sti = ffstream(st);
+-    av_log(avf, AV_LOG_DEBUG, "file:%d stream:%d pts:%s pts_time:%s dts:%s dts_time:%s",
++    av_log(avf, AV_LOG_DEBUG, "file:%d stream:%d pts:%6s pts_time:%-6s dts:%6s dts_time:%-6s",
+            (unsigned)(cat->cur_file - cat->files), pkt->stream_index,
+            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
+            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
+@@ -793,9 +793,9 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
+         pkt->pts += delta;
+     if (pkt->dts != AV_NOPTS_VALUE)
+         pkt->dts += delta;
+-    av_log(avf, AV_LOG_DEBUG, " -> pts:%s pts_time:%s dts:%s dts_time:%s\n",
++    av_log(avf, AV_LOG_DEBUG, " ->  pts:%6s pts_time:%-6s dts:%6s dts_time:%-6s (delta:%ld, pkt_pos:%6ld)\n",
+            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
+-           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
++           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base),delta,pkt->pos);
+     if (cat->cur_file->metadata) {
+         size_t metadata_len;
+         char* packed_metadata = av_packet_pack_dictionary(cat->cur_file->metadata, &metadata_len);
+diff --git a/libavformat/dovi_isom.c b/libavformat/dovi_isom.c
+index ef7ab1b6d9..3d261fe00f 100644
+--- a/libavformat/dovi_isom.c
++++ b/libavformat/dovi_isom.c
+@@ -106,7 +106,7 @@ void ff_isom_put_dvcc_dvvc(void *logctx, uint8_t out[ISOM_DVCC_DVVC_SIZE],
+     flush_put_bits(&pb);
+ 
+     av_log(logctx, AV_LOG_DEBUG,
+-           "DOVI in %s box, version: %d.%d, profile: %d, level: %d, "
++           "Done putting DOVI in %s box, version: %d.%d, profile: %d, level: %d, "
+            "rpu flag: %d, el flag: %d, bl flag: %d, compatibility id: %d\n",
+            dovi->dv_profile > 10 ? "dvwC" : (dovi->dv_profile > 7 ? "dvvC" : "dvcC"),
+            dovi->dv_version_major, dovi->dv_version_minor,
+diff --git a/libavformat/dump.c b/libavformat/dump.c
+index c0868a1bb3..6110e8d355 100644
+--- a/libavformat/dump.c
++++ b/libavformat/dump.c
+@@ -551,7 +551,7 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
+         av_log(NULL, AV_LOG_INFO, "[0x%x]", st->id);
+     if (lang)
+         av_log(NULL, AV_LOG_INFO, "(%s)", lang->value);
+-    av_log(NULL, AV_LOG_DEBUG, ", %d, %d/%d", sti->codec_info_nb_frames,
++    av_log(NULL, AV_LOG_DEBUG, ", %d, tb=%d/%d", sti->codec_info_nb_frames,
+            st->time_base.num, st->time_base.den);
+     av_log(NULL, AV_LOG_INFO, ": %s", buf);
+ 
+@@ -576,7 +576,7 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
+             av_log(NULL, AV_LOG_INFO, "%s", separator);
+ 
+         if (fps)
+-            print_fps(av_q2d(st->avg_frame_rate), tbr || tbn ? "fps, " : "fps");
++            print_fps(av_q2d(st->avg_frame_rate), tbr || tbn ? "avgfps, " : "avgfps");
+         if (tbr)
+             print_fps(av_q2d(st->r_frame_rate), tbn ? "tbr, " : "tbr");
+         if (tbn)
+@@ -584,41 +584,41 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
+     }
+ 
+     if (st->disposition & AV_DISPOSITION_DEFAULT)
+-        av_log(NULL, AV_LOG_INFO, " (default)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: default)");
+     if (st->disposition & AV_DISPOSITION_DUB)
+-        av_log(NULL, AV_LOG_INFO, " (dub)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: dub)");
+     if (st->disposition & AV_DISPOSITION_ORIGINAL)
+-        av_log(NULL, AV_LOG_INFO, " (original)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: original)");
+     if (st->disposition & AV_DISPOSITION_COMMENT)
+-        av_log(NULL, AV_LOG_INFO, " (comment)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: comment)");
+     if (st->disposition & AV_DISPOSITION_LYRICS)
+-        av_log(NULL, AV_LOG_INFO, " (lyrics)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: lyrics)");
+     if (st->disposition & AV_DISPOSITION_KARAOKE)
+-        av_log(NULL, AV_LOG_INFO, " (karaoke)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: karaoke)");
+     if (st->disposition & AV_DISPOSITION_FORCED)
+-        av_log(NULL, AV_LOG_INFO, " (forced)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: forced)");
+     if (st->disposition & AV_DISPOSITION_HEARING_IMPAIRED)
+-        av_log(NULL, AV_LOG_INFO, " (hearing impaired)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: hearing impaired)");
+     if (st->disposition & AV_DISPOSITION_VISUAL_IMPAIRED)
+-        av_log(NULL, AV_LOG_INFO, " (visual impaired)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: visual impaired)");
+     if (st->disposition & AV_DISPOSITION_CLEAN_EFFECTS)
+-        av_log(NULL, AV_LOG_INFO, " (clean effects)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: clean effects)");
+     if (st->disposition & AV_DISPOSITION_ATTACHED_PIC)
+-        av_log(NULL, AV_LOG_INFO, " (attached pic)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: attached pic)");
+     if (st->disposition & AV_DISPOSITION_TIMED_THUMBNAILS)
+-        av_log(NULL, AV_LOG_INFO, " (timed thumbnails)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: timed thumbnails)");
+     if (st->disposition & AV_DISPOSITION_CAPTIONS)
+-        av_log(NULL, AV_LOG_INFO, " (captions)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: captions)");
+     if (st->disposition & AV_DISPOSITION_DESCRIPTIONS)
+-        av_log(NULL, AV_LOG_INFO, " (descriptions)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: descriptions)");
+     if (st->disposition & AV_DISPOSITION_METADATA)
+-        av_log(NULL, AV_LOG_INFO, " (metadata)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: metadata)");
+     if (st->disposition & AV_DISPOSITION_DEPENDENT)
+-        av_log(NULL, AV_LOG_INFO, " (dependent)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: dependent)");
+     if (st->disposition & AV_DISPOSITION_STILL_IMAGE)
+-        av_log(NULL, AV_LOG_INFO, " (still image)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: still image)");
+     if (st->disposition & AV_DISPOSITION_NON_DIEGETIC)
+-        av_log(NULL, AV_LOG_INFO, " (non-diegetic)");
++        av_log(NULL, AV_LOG_INFO, " (DISPOSITION: non-diegetic)");
+     av_log(NULL, AV_LOG_INFO, "\n");
+ 
+     dump_metadata(NULL, st->metadata, "    ");
+diff --git a/libavformat/mov.c b/libavformat/mov.c
+index 13ddedcac1..2b8b5a52dd 100644
+--- a/libavformat/mov.c
++++ b/libavformat/mov.c
+@@ -3954,7 +3954,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
+ 
+             if (ctts_data_old && ctts_index_old < ctts_count_old) {
+                 curr_ctts = ctts_data_old[ctts_index_old].duration;
+-                av_log(mov->fc, AV_LOG_TRACE, "stts: %"PRId64" ctts: %"PRId64", ctts_index: %"PRId64", ctts_count: %"PRId64"\n",
++                av_log(mov->fc, AV_LOG_TRACE, "stts: %6"PRId64" ctts: %6"PRId64", ctts_index: %6"PRId64", ctts_count: %6"PRId64"\n",
+                        curr_cts, curr_ctts, ctts_index_old, ctts_count_old);
+                 curr_cts += curr_ctts;
+                 ctts_sample_old++;
+@@ -4370,8 +4370,8 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
+                     e->size = sample_size;
+                     e->min_distance = distance;
+                     e->flags = keyframe ? AVINDEX_KEYFRAME : 0;
+-                    av_log(mov->fc, AV_LOG_TRACE, "AVIndex stream %d, sample %u, offset %"PRIx64", dts %"PRId64", "
+-                            "size %u, distance %u, keyframe %d\n", st->index, current_sample,
++                    av_log(mov->fc, AV_LOG_TRACE, "AVIndex stream %d, sample %5u, offset %7"PRIx64", dts %7"PRId64", "
++                            "size %6u, distance %5u, keyframe %d\n", st->index, current_sample,
+                             current_offset, current_dts, sample_size, distance, keyframe);
+                     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && sti->nb_index_entries < 100)
+                         ff_rfps_add_frame(mov->fc, st, current_dts);
+diff --git a/libavformat/movenc.c b/libavformat/movenc.c
+index e39f1ac987..aaa245c087 100644
+--- a/libavformat/movenc.c
++++ b/libavformat/movenc.c
+@@ -1854,6 +1854,11 @@ static unsigned int validate_codec_tag(const AVCodecTag *const *tags,
+ {
+     int i;
+ 
++    if(tag==828929636 && codec_id==173){
++        av_log(NULL,AV_LOG_WARNING,"Lavf/movenc.c@validate_codec_tag: Making an explicit exception for %s and %s.\n",av_fourcc2str(tag),avcodec_get_name(codec_id));
++        return tag;
++    }
++
+     /**
+      * Check that tag + id is in the table
+      */
+@@ -1871,9 +1876,10 @@ static unsigned int validate_codec_tag(const AVCodecTag *const *tags,
+ 
+ static unsigned int mov_find_codec_tag(AVFormatContext *s, MOVTrack *track)
+ {
+-    if (is_cover_image(track->st))
++    if (is_cover_image(track->st)){
++        av_log(NULL,AV_LOG_WARNING,"Lavf/movenc.c@mov_find_codec_tag(): Looking for cover image codec tag with track(stream)->codecpar->codec_id='%s'\n",avcodec_get_name(track->par->codec_id));
+         return ff_codec_get_tag(codec_cover_image_tags, track->par->codec_id);
+-
++    }
+     if (track->mode == MODE_IPOD)
+         if (!av_match_ext(s->url, "m4a") &&
+             !av_match_ext(s->url, "m4v") &&
+@@ -1883,9 +1889,11 @@ static unsigned int mov_find_codec_tag(AVFormatContext *s, MOVTrack *track)
+ 
+     if (track->mode == MODE_MOV) {
+         return mov_get_codec_tag(s, track);
+-    } else
++    } else{
++        av_log(NULL,AV_LOG_WARNING,"Lavf/movenc.c@validate_codec_tag(oformat->codectags, codec_tag=%s, codec_id=%s);\n",av_fourcc2str(track->par->codec_tag),avcodec_get_name(track->par->codec_id));
+         return validate_codec_tag(s->oformat->codec_tag, track->par->codec_tag,
+                                   track->par->codec_id);
++    }
+ }
+ 
+ /** Write uuid atom.
+@@ -2454,8 +2462,10 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
+             mov_write_st3d_tag(s, pb, (AVStereo3D*)stereo_3d->data);
+         if (spherical_mapping)
+             mov_write_sv3d_tag(mov->fc, pb, (AVSphericalMapping*)spherical_mapping->data);
+-        if (dovi)
++        if (dovi){
++            av_log(NULL,AV_LOG_WARNING,"Writing dvcc/dvvc tag because -strict<=unofficial and DOVI stream sidedata exists\n");
+             mov_write_dvcc_dvvc_tag(s, pb, (AVDOVIDecoderConfigurationRecord *)dovi->data);
++        }
+     }
+ 
+     if (track->par->sample_aspect_ratio.den && track->par->sample_aspect_ratio.num) {
+@@ -7189,9 +7199,9 @@ static int mov_init(AVFormatContext *s)
+         track->mode = mov->mode;
+         track->tag  = mov_find_codec_tag(s, track);
+         if (!track->tag) {
+-            av_log(s, AV_LOG_ERROR, "Could not find tag for codec %s in stream #%d, "
+-                   "codec not currently supported in container\n",
+-                   avcodec_get_name(st->codecpar->codec_id), i);
++            av_log(s, AV_LOG_ERROR, "Could not find tag for codec %s with track->par: codec_tag=%s && codec_id=%s in stream #%d (%s in %s with codec_type=%s, codec_id=%s, w:h=%d:%d), "
++                   "codec not currently supported in container?\n",
++                   avcodec_get_name(st->codecpar->codec_id),av_fourcc2str(track->par->codec_tag),avcodec_get_name(track->par->codec_id), i, (*(AVClass**)st)->item_name(st), (*(AVClass**)s)->item_name(s), av_get_media_type_string(st->codecpar->codec_type), avcodec_get_name(st->codecpar->codec_id),st->codecpar->width,st->codecpar->height);
+             return AVERROR(EINVAL);
+         }
+         /* If hinting of this track is enabled by a later hint track,
+diff --git a/libavutil/opt.c b/libavutil/opt.c
+index 0908751752..b4a39483a1 100644
+--- a/libavutil/opt.c
++++ b/libavutil/opt.c
+@@ -510,6 +510,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
+         av_log(obj, AV_LOG_WARNING, "The \"%s\" option is deprecated: %s\n", name, o->help);
+ 
+     dst = ((uint8_t *)target_obj) + o->offset;
++
++    av_log(NULL,AV_LOG_WARNING,"AVOption %s='%s' (%s) consumed by %s(%s) offset:%d\n",name,val,o->help,(*(AVClass**)obj)->class_name,(*(AVClass**)obj)->item_name(obj),o->offset);
++
+     switch (o->type) {
+     case AV_OPT_TYPE_BOOL:
+         return set_string_bool(obj, o, val, dst);
