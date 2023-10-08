@@ -9,7 +9,8 @@ I am very bad at C and this is only for ad-hoc ffmpeg hacking, sorry for the mes
 - when and what FFCodec is initialized, when and what encoder/decoder/muxer/demuxer threads are created.
 - add NAL sizes(by bytes) to `-loglevel trace` output
 - **better vf_showinfo**: also dumps the frame metadata, ASCII unregistered SEI messages, more verbose lines, also with comparison of deprecated pkt_pos and pkt_pos from ffmpeg FrameData(mentioned in the deprecation commit message).
-- some modifications regarding DolbyVision(DOVI) muxing and stream codec tag finding.
+- provide more information when stream codec tag finding fails.
+- aligns fields of various trace logs to make them easier to read.
 - various modifications to log messages to make them easier to understand without digging into source code.
 
 # Behavioral changes
