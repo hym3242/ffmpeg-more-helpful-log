@@ -1,5 +1,5 @@
 # ffmpeg-more-helpful-log
-A patch that adds more helpful log messages(with loglevel WARNING/ERROR) to ffmpeg for debugging or understanding ffmpeg. It also modifies some defaults to be more sane. Can be directly applied to the master branch of ffmpeg at the time of writing(Oct 8, 2023).
+A patch that adds more helpful log messages(with loglevel VERBOSE and WARNING) to ffmpeg for debugging or understanding ffmpeg. It also modifies some defaults to be more sane. Can be directly applied to the master branch of ffmpeg at the time of writing(Oct 8, 2023).
 
 I am very bad at C and this is only for ad-hoc ffmpeg hacking, sorry for the messy code...
 
