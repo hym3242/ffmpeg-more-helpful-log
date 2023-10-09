@@ -17,9 +17,9 @@ index 156c13801a..cc5c18320b 100644
          dst = &(*so)[*dstcount - 1].u;
      }
  
-+    if(optctx && (po->flags & (OPT_OFFSET|OPT_SPEC)) ) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to OptionsContext offset=%lu dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,po->u.off,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
-+    if(optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to global var/func dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
-+    if(!optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_WARNING,"Writing option %s='%s' (%s) to optctx-less global var/func dst=%p\n",opt,arg,po->help,dst);
++    if(optctx && (po->flags & (OPT_OFFSET|OPT_SPEC)) ) av_log(NULL,AV_LOG_VERBOSE,"Writing option %s='%s' (%s) to OptionsContext offset=%lu dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,po->u.off,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
++    if(optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_VERBOSE,"Writing option %s='%s' (%s) to global var/func dst=%p optiongroup='%s' (%s)\n",opt,arg,po->help,dst,((OptionsContext*)optctx)->g->arg,((OptionsContext*)optctx)->g->group_def->name);
++    if(!optctx && !(po->flags & (OPT_OFFSET|OPT_SPEC))) av_log(NULL,AV_LOG_VERBOSE,"Writing option %s='%s' (%s) to optctx-less global var/func dst=%p\n",opt,arg,po->help,dst);
 +
      if (po->flags & OPT_STRING) {
          char *str;
@@ -30,9 +30,9 @@ index 156c13801a..cc5c18320b 100644
      } else if (po->u.func_arg) {
 -        int ret = po->u.func_arg(optctx, opt, arg);
 +        int ret;
-+        av_log(NULL,AV_LOG_WARNING,"    (func_arg...)\n");
++        av_log(NULL,AV_LOG_VERBOSE,"    (func_arg...)\n");
 +        ret = po->u.func_arg(optctx, opt, arg);
-+        av_log(NULL,AV_LOG_WARNING,"    (...DONE func_arg)\n");
++        av_log(NULL,AV_LOG_VERBOSE,"    (...DONE func_arg)\n");
          if (ret < 0) {
              av_log(NULL, AV_LOG_ERROR,
                     "Failed to set value '%s' for option '%s': %s\n",
@@ -74,7 +74,7 @@ index fcee8b65ac..fdccddab9d 100644
      ObjPool *op;
      int ret = 0;
  
-+    av_log(NULL,AV_LOG_WARNING,"[ STARTING DECODER THREAD : %s ]\n",ist->dec->name);
++    av_log(NULL,AV_LOG_VERBOSE,"[ STARTING DECODER THREAD : %s ]\n",ist->dec->name);
 +
      op = objpool_alloc_packets();
      if (!op)
@@ -87,7 +87,7 @@ index c71edf01a5..86e4c09a98 100644
      int ret;
      InputFile *f = &d->f;
  
-+    av_log(NULL,AV_LOG_WARNING,"[ STARTING DEMUXER THREAD : %s ]\n",d->log_name);
++    av_log(NULL,AV_LOG_VERBOSE,"[ STARTING DEMUXER THREAD : %s ]\n",d->log_name);
 +
      if (d->thread_queue_size <= 0)
          d->thread_queue_size = (nb_input_files > 1 ? 8 : 1);
@@ -100,7 +100,7 @@ index 7a924dba6c..5ce251e3cf 100644
      ObjPool *op;
      int ret;
  
-+    av_log(NULL,AV_LOG_WARNING,"[ STARTING MUXER THREAD : %s ]\n",mux->log_name);
++    av_log(NULL,AV_LOG_VERBOSE,"[ STARTING MUXER THREAD : %s ]\n",mux->log_name);
 +
      op = objpool_alloc_packets();
      if (!op)
@@ -134,11 +134,11 @@ index 304471dd03..ff76c0bc0c 100644
  
      memset(&octx, 0, sizeof(octx));
  
-+    av_log(NULL,AV_LOG_WARNING,"CMDLINE: ");
++    av_log(NULL,AV_LOG_VERBOSE,"CMDLINE: ");
 +    for (int i = 0; i < argc; i++) {
-+        av_log(NULL,AV_LOG_WARNING,"%s ", argv[i]);
++        av_log(NULL,AV_LOG_VERBOSE,"%s ", argv[i]);
 +    }
-+    av_log(NULL,AV_LOG_WARNING,"\n");
++    av_log(NULL,AV_LOG_VERBOSE,"\n");
 +
      /* split the commandline into an internal representation */
      ret = split_commandline(&octx, argc, argv, options, groups,
@@ -149,83 +149,83 @@ index 304471dd03..ff76c0bc0c 100644
  
 +    /* dump global opts */
 +    if(octx.global_opts.opts || octx.global_opts.format_opts || octx.global_opts.codec_opts  || octx.global_opts.sws_dict || octx.global_opts.swr_opts){
-+        av_log(NULL,AV_LOG_WARNING,"GLOBAL: \n");
++        av_log(NULL,AV_LOG_VERBOSE,"GLOBAL: \n");
 +    }
 +    if(octx.global_opts.opts){
-+        av_log(NULL,AV_LOG_WARNING,"    OPTS: ");
++        av_log(NULL,AV_LOG_VERBOSE,"    OPTS: ");
 +        for(int i=0;i<octx.global_opts.nb_opts;i++){
-+            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.opts[i].key,octx.global_opts.opts[i].val);
++            av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.global_opts.opts[i].key,octx.global_opts.opts[i].val);
 +        }
-+        av_log(NULL,AV_LOG_WARNING,"\n");
++        av_log(NULL,AV_LOG_VERBOSE,"\n");
 +    }
 +    if(octx.global_opts.format_opts){
-+        av_log(NULL,AV_LOG_WARNING,"    FORMAT_OPTS: ");
++        av_log(NULL,AV_LOG_VERBOSE,"    FORMAT_OPTS: ");
 +        for(int i=0;i<octx.global_opts.format_opts->count;i++){
-+            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.format_opts->elems[i].key,octx.global_opts.format_opts->elems[i].value);
++            av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.global_opts.format_opts->elems[i].key,octx.global_opts.format_opts->elems[i].value);
 +        }
-+        av_log(NULL,AV_LOG_WARNING,"\n");
++        av_log(NULL,AV_LOG_VERBOSE,"\n");
 +    }
 +    if(octx.global_opts.codec_opts){
-+        av_log(NULL,AV_LOG_WARNING,"    CODEC_OPTS: ");
++        av_log(NULL,AV_LOG_VERBOSE,"    CODEC_OPTS: ");
 +        for(int i=0;i<octx.global_opts.codec_opts->count;i++){
-+            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.codec_opts->elems[i].key,octx.global_opts.codec_opts->elems[i].value);
++            av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.global_opts.codec_opts->elems[i].key,octx.global_opts.codec_opts->elems[i].value);
 +        }
-+        av_log(NULL,AV_LOG_WARNING,"\n");
++        av_log(NULL,AV_LOG_VERBOSE,"\n");
 +    }
 +    if(octx.global_opts.sws_dict){
-+        av_log(NULL,AV_LOG_WARNING,"    SWS_DICT: ");
++        av_log(NULL,AV_LOG_VERBOSE,"    SWS_DICT: ");
 +        for(int i=0;i<octx.global_opts.sws_dict->count;i++){
-+            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.sws_dict->elems[i].key,octx.global_opts.sws_dict->elems[i].value);
++            av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.global_opts.sws_dict->elems[i].key,octx.global_opts.sws_dict->elems[i].value);
 +        }
-+        av_log(NULL,AV_LOG_WARNING,"\n");
++        av_log(NULL,AV_LOG_VERBOSE,"\n");
 +    }
 +    if(octx.global_opts.swr_opts){
-+        av_log(NULL,AV_LOG_WARNING,"    SWR_OPTS: ");
++        av_log(NULL,AV_LOG_VERBOSE,"    SWR_OPTS: ");
 +        for(int i=0;i<octx.global_opts.swr_opts->count;i++){
-+            av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.global_opts.swr_opts->elems[i].key,octx.global_opts.swr_opts->elems[i].value);
++            av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.global_opts.swr_opts->elems[i].key,octx.global_opts.swr_opts->elems[i].value);
 +        }
-+        av_log(NULL,AV_LOG_WARNING,"\n");
++        av_log(NULL,AV_LOG_VERBOSE,"\n");
 +    }
 +
 +    /* dump the OptionParseContext octx (per file) */
 +    for(int i=1;i>=0;i--){
 +        for(int j=0;j<octx.groups[i].nb_groups;j++){
-+            if(i==1)av_log(NULL,AV_LOG_WARNING,"INFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
-+            if(i==0)av_log(NULL,AV_LOG_WARNING,"OUTFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
++            if(i==1)av_log(NULL,AV_LOG_VERBOSE,"INFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
++            if(i==0)av_log(NULL,AV_LOG_VERBOSE,"OUTFILE %d: %s\n",j,octx.groups[i].groups[j].arg);
 +            if(octx.groups[i].groups[j].opts){
-+                av_log(NULL,AV_LOG_WARNING,"    OPTS: ");
++                av_log(NULL,AV_LOG_VERBOSE,"    OPTS: ");
 +                for(int k=0;k<octx.groups[i].groups[j].nb_opts;k++){
-+                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].opts[k].key,octx.groups[i].groups[j].opts[k].val);
++                    av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.groups[i].groups[j].opts[k].key,octx.groups[i].groups[j].opts[k].val);
 +                }
-+                av_log(NULL,AV_LOG_WARNING,"\n");
++                av_log(NULL,AV_LOG_VERBOSE,"\n");
 +            }
 +            if(octx.groups[i].groups[j].format_opts){
-+                av_log(NULL,AV_LOG_WARNING,"    FORMAT_OPTS: ");
++                av_log(NULL,AV_LOG_VERBOSE,"    FORMAT_OPTS: ");
 +                for(int k=0;k<octx.groups[i].groups[j].format_opts->count;k++){
-+                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].format_opts->elems[k].key,octx.groups[i].groups[j].format_opts->elems[k].value);
++                    av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.groups[i].groups[j].format_opts->elems[k].key,octx.groups[i].groups[j].format_opts->elems[k].value);
 +                }
-+                av_log(NULL,AV_LOG_WARNING,"\n");
++                av_log(NULL,AV_LOG_VERBOSE,"\n");
 +            }
 +            if(octx.groups[i].groups[j].codec_opts){
-+                av_log(NULL,AV_LOG_WARNING,"    CODEC_OPTS: ");
++                av_log(NULL,AV_LOG_VERBOSE,"    CODEC_OPTS: ");
 +                for(int k=0;k<octx.groups[i].groups[j].codec_opts->count;k++){
-+                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].codec_opts->elems[k].key,octx.groups[i].groups[j].codec_opts->elems[k].value);
++                    av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.groups[i].groups[j].codec_opts->elems[k].key,octx.groups[i].groups[j].codec_opts->elems[k].value);
 +                }
-+                av_log(NULL,AV_LOG_WARNING,"\n");
++                av_log(NULL,AV_LOG_VERBOSE,"\n");
 +            }
 +            if(octx.groups[i].groups[j].sws_dict){
-+                av_log(NULL,AV_LOG_WARNING,"    SWS_DICT: ");
++                av_log(NULL,AV_LOG_VERBOSE,"    SWS_DICT: ");
 +                for(int k=0;k<octx.groups[i].groups[j].sws_dict->count;k++){
-+                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].sws_dict->elems[k].key,octx.groups[i].groups[j].sws_dict->elems[k].value);
++                    av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.groups[i].groups[j].sws_dict->elems[k].key,octx.groups[i].groups[j].sws_dict->elems[k].value);
 +                }
-+                av_log(NULL,AV_LOG_WARNING,"\n");
++                av_log(NULL,AV_LOG_VERBOSE,"\n");
 +            }
 +            if(octx.groups[i].groups[j].swr_opts){
-+                av_log(NULL,AV_LOG_WARNING,"    SWR_OPTS: ");
++                av_log(NULL,AV_LOG_VERBOSE,"    SWR_OPTS: ");
 +                for(int k=0;k<octx.groups[i].groups[j].swr_opts->count;k++){
-+                    av_log(NULL,AV_LOG_WARNING,"-%s='%s' ",octx.groups[i].groups[j].swr_opts->elems[k].key,octx.groups[i].groups[j].swr_opts->elems[k].value);
++                    av_log(NULL,AV_LOG_VERBOSE,"-%s='%s' ",octx.groups[i].groups[j].swr_opts->elems[k].key,octx.groups[i].groups[j].swr_opts->elems[k].value);
 +                }
-+                av_log(NULL,AV_LOG_WARNING,"\n");
++                av_log(NULL,AV_LOG_VERBOSE,"\n");
 +            }
 +        }
 +    }
@@ -276,7 +276,7 @@ index 2dda310e91..988077cc51 100644
          avci->frame_thread_encoder) {
          if (codec2->init) {
              lock_avcodec(codec2);
-+            av_log(NULL,AV_LOG_WARNING,"FFCodec[%s] -> init(); (%s)\n",codec2->p.name,codec2->p.long_name);
++            av_log(NULL,AV_LOG_VERBOSE,"FFCodec[%s] -> init(); (%s)\n",codec2->p.name,codec2->p.long_name);
              ret = codec2->init(avctx);
              unlock_avcodec(codec2);
              if (ret < 0) {
@@ -349,12 +349,12 @@ index ab7782862a..d76f23d76d 100644
      int ret;
 +
 +    if(link->type == AVMEDIA_TYPE_VIDEO){
-+        if(link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_pix_fmt_desc_get(link->src->inputs[0]->format)->name,av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
-+        if(!link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
++        if(link->src->inputs)av_log(NULL,AV_LOG_VERBOSE,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_pix_fmt_desc_get(link->src->inputs[0]->format)->name,av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
++        if(!link->src->inputs)av_log(NULL,AV_LOG_VERBOSE,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_pix_fmt_desc_get(link->src->outputs[0]->format)->name);
 +    }
 +    if(link->type == AVMEDIA_TYPE_AUDIO){
-+        if(link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_get_sample_fmt_name(link->src->inputs[0]->format),av_get_sample_fmt_name(link->src->outputs[0]->format));
-+        if(!link->src->inputs)av_log(NULL,AV_LOG_WARNING,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_get_sample_fmt_name(link->src->outputs[0]->format));
++        if(link->src->inputs)av_log(NULL,AV_LOG_VERBOSE,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,av_get_sample_fmt_name(link->src->inputs[0]->format),av_get_sample_fmt_name(link->src->outputs[0]->format));
++        if(!link->src->inputs)av_log(NULL,AV_LOG_VERBOSE,"[%s] inputlinks[0] fmt = %s, outputlinks[0] fmt = %s\n",link->src->name,"(NULL)",av_get_sample_fmt_name(link->src->outputs[0]->format));
 +    }
 +
      FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); tlog_ref(NULL, frame, 1);
@@ -369,12 +369,12 @@ index b0221e8538..63005af825 100644
      }
  
 +    if(colorspace == 2) {
-+             av_log(NULL,AV_LOG_ERROR,"vf_scale.c@parse_yuv_type(): in->colorspace is UNSPECIFIED, using bt709\n");
++             av_log(NULL,AV_LOG_WARNING,"vf_scale.c@parse_yuv_type(): in->colorspace is UNSPECIFIED, using bt709\n");
 +             colorspace = AVCOL_SPC_BT709;
 +    }
 +
 +    if(colorspace == 0) {
-+        av_log(NULL,AV_LOG_ERROR,"vf_scale.c@parse_yuv_type(): in->colorspace is GBR, using bt709\n");
++        av_log(NULL,AV_LOG_WARNING,"vf_scale.c@parse_yuv_type(): in->colorspace is GBR, using bt709\n");
 +        colorspace = AVCOL_SPC_BT709;
 +    }
 +
@@ -382,7 +382,7 @@ index b0221e8538..63005af825 100644
          colorspace = AVCOL_SPC_BT470BG;
      }
  
-+    av_log(NULL,AV_LOG_WARNING,"vf_scale.c@parse_yuv_type(): decided colorspace = %s\n",av_color_space_name(colorspace));
++    av_log(NULL,AV_LOG_VERBOSE,"vf_scale.c@parse_yuv_type(): decided colorspace = %s\n",av_color_space_name(colorspace));
      return sws_getCoefficients(colorspace);
  }
  
@@ -405,7 +405,7 @@ index b0221e8538..63005af825 100644
              table     = parse_yuv_type(scale->out_color_matrix, AVCOL_SPC_UNSPECIFIED);
          else if (scale->in_color_matrix)
              table = inv_table;
-+		av_log(NULL,AV_LOG_WARNING,"[%s] inv_table={%d,%d,%d,%d} table={%d,%d,%d,%d}\n",link->dst->name,inv_table[0],inv_table[1],inv_table[2],inv_table[3],table[0],table[1],table[2],table[3]);
++		av_log(NULL,AV_LOG_VERBOSE,"[%s] inv_table={%d,%d,%d,%d} table={%d,%d,%d,%d}\n",link->dst->name,inv_table[0],inv_table[1],inv_table[2],inv_table[3],table[0],table[1],table[2],table[3]);
  
          if (scale-> in_range != AVCOL_RANGE_UNSPECIFIED)
              in_full  = (scale-> in_range == AVCOL_RANGE_JPEG);
@@ -687,7 +687,7 @@ index e39f1ac987..aaa245c087 100644
  {
 -    if (is_cover_image(track->st))
 +    if (is_cover_image(track->st)){
-+        av_log(NULL,AV_LOG_WARNING,"Lavf/movenc.c@mov_find_codec_tag(): Looking for cover image codec tag with track(stream)->codecpar->codec_id='%s'\n",avcodec_get_name(track->par->codec_id));
++        av_log(NULL,AV_LOG_VERBOSE,"Lavf/movenc.c@mov_find_codec_tag(): Looking for cover image codec tag with track(stream)->codecpar->codec_id='%s'\n",avcodec_get_name(track->par->codec_id));
          return ff_codec_get_tag(codec_cover_image_tags, track->par->codec_id);
 -
 +    }
@@ -700,7 +700,7 @@ index e39f1ac987..aaa245c087 100644
          return mov_get_codec_tag(s, track);
 -    } else
 +    } else{
-+        av_log(NULL,AV_LOG_WARNING,"Lavf/movenc.c@validate_codec_tag(oformat->codectags, codec_tag=%s, codec_id=%s);\n",av_fourcc2str(track->par->codec_tag),avcodec_get_name(track->par->codec_id));
++        av_log(NULL,AV_LOG_VERBOSE,"Lavf/movenc.c@validate_codec_tag(oformat->codectags, codec_tag=%s, codec_id=%s);\n",av_fourcc2str(track->par->codec_tag),avcodec_get_name(track->par->codec_id));
          return validate_codec_tag(s->oformat->codec_tag, track->par->codec_tag,
                                    track->par->codec_id);
 +    }
@@ -713,7 +713,7 @@ index e39f1ac987..aaa245c087 100644
              mov_write_sv3d_tag(mov->fc, pb, (AVSphericalMapping*)spherical_mapping->data);
 -        if (dovi)
 +        if (dovi){
-+            av_log(NULL,AV_LOG_WARNING,"Writing dvcc/dvvc tag because -strict<=unofficial and DOVI stream sidedata exists\n");
++            av_log(NULL,AV_LOG_VERBOSE,"Writing dvcc/dvvc tag because -strict<=unofficial and DOVI stream sidedata exists\n");
              mov_write_dvcc_dvvc_tag(s, pb, (AVDOVIDecoderConfigurationRecord *)dovi->data);
 +        }
      }
@@ -741,7 +741,7 @@ index 0908751752..b4a39483a1 100644
  
      dst = ((uint8_t *)target_obj) + o->offset;
 +
-+    av_log(NULL,AV_LOG_WARNING,"AVOption %s='%s' (%s) consumed by %s(%s) offset:%d\n",name,val,o->help,(*(AVClass**)obj)->class_name,(*(AVClass**)obj)->item_name(obj),o->offset);
++    av_log(NULL,AV_LOG_VERBOSE,"AVOption %s='%s' (%s) consumed by %s(%s) offset:%d\n",name,val,o->help,(*(AVClass**)obj)->class_name,(*(AVClass**)obj)->item_name(obj),o->offset);
 +
      switch (o->type) {
      case AV_OPT_TYPE_BOOL:
